@@ -1,199 +1,167 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from dataclasses import dataclass
 from ..utils.logger import get_logger
+from datetime import datetime, timedelta
 
 @dataclass
 class PositionConstraints:
     """
     Position sizing constraints for risk management.
     """
-    max_position_size: float = 0.1  # Maximum position size as fraction of portfolio
-    min_position_size: float = 0.01  # Minimum position size as fraction of portfolio
-    confidence_scaling: bool = True  # Scale position size based on confidence
-    volatility_scaling: bool = True  # Scale position size based on volatility
-    trend_scaling: bool = True  # Scale position size based on trend alignment
+    min_value: float
+    max_value: float
+    max_portfolio_risk: float = 0.1  # 10% default
 
 @dataclass
 class RiskConstraints:
     """
     Risk management constraints and limits.
     """
-    max_daily_drawdown: float = 0.02  # Maximum daily drawdown (2%)
-    max_open_trades: int = 5  # Maximum number of concurrent trades
-    min_trade_interval: int = 300  # Minimum seconds between trades
-    max_position_value: float = 0.2  # Maximum value of any single position
-    max_portfolio_risk: float = 0.1  # Maximum risk per trade as fraction of portfolio
-    stop_loss_pct: float = 0.02  # Default stop loss percentage
-    take_profit_pct: float = 0.04  # Default take profit percentage
+    max_daily_drawdown: float
+    max_open_trades: int
+    trade_cooldown_minutes: int
 
 class RiskConstraintsManager:
     """
     Manages risk constraints and position sizing rules.
     """
     
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: Dict[str, Any]):
         """
         Initialize risk constraints manager.
         
         Args:
-            config: Configuration dictionary for constraints
+            config: Configuration dictionary
         """
         self.logger = get_logger(__name__)
         
-        # Initialize constraints
-        self.position_constraints = PositionConstraints()
-        self.risk_constraints = RiskConstraints()
+        # Initialize position constraints
+        self.position_constraints = PositionConstraints(
+            min_value=config.get('min_position_value', 100),
+            max_value=config.get('max_position_value', 10000),
+            max_portfolio_risk=config.get('max_portfolio_risk', 0.1)
+        )
         
-        # Update with provided config
-        if config:
-            self._update_constraints(config)
+        # Initialize risk constraints
+        self.risk_constraints = RiskConstraints(
+            max_daily_drawdown=config.get('max_daily_drawdown', 0.05),
+            max_open_trades=config.get('max_open_trades', 3),
+            trade_cooldown_minutes=config.get('trade_cooldown_minutes', 30)
+        )
         
-        self.logger.info("Initialized risk constraints manager")
-    
-    def _update_constraints(self, config: Dict) -> None:
-        """
-        Update constraints from configuration.
-        
-        Args:
-            config: Configuration dictionary
-        """
-        try:
-            # Update position constraints
-            if 'position' in config:
-                pos_config = config['position']
-                for key, value in pos_config.items():
-                    if hasattr(self.position_constraints, key):
-                        setattr(self.position_constraints, key, value)
-            
-            # Update risk constraints
-            if 'risk' in config:
-                risk_config = config['risk']
-                for key, value in risk_config.items():
-                    if hasattr(self.risk_constraints, key):
-                        setattr(self.risk_constraints, key, value)
-            
-            self.logger.info("Updated risk constraints from config")
-        except Exception as e:
-            self.logger.error(f"Error updating constraints: {str(e)}")
-            raise
-    
-    def calculate_position_size(
-        self,
-        base_size: float,
-        confidence: float,
-        volatility: float,
-        trend_alignment: float
-    ) -> float:
-        """
-        Calculate position size based on constraints and market conditions.
-        
-        Args:
-            base_size: Base position size
-            confidence: Signal confidence (0-1)
-            volatility: Market volatility (0-1)
-            trend_alignment: Trend alignment score (0-1)
-            
-        Returns:
-            Adjusted position size
-        """
-        try:
-            # Start with base size
-            size = base_size
-            
-            # Apply confidence scaling
-            if self.position_constraints.confidence_scaling:
-                size *= confidence
-            
-            # Apply volatility scaling
-            if self.position_constraints.volatility_scaling:
-                size *= (1 - volatility)  # Reduce size in high volatility
-            
-            # Apply trend scaling
-            if self.position_constraints.trend_scaling:
-                size *= trend_alignment
-            
-            # Apply position size limits
-            size = max(
-                self.position_constraints.min_position_size,
-                min(size, self.position_constraints.max_position_size)
-            )
-            
-            return size
-        except Exception as e:
-            self.logger.error(f"Error calculating position size: {str(e)}")
-            return self.position_constraints.min_position_size
+        self.logger.info(f"Initialized risk constraints: {self.get_metadata()}")
     
     def validate_trade(
         self,
-        current_drawdown: float,
-        open_trades: int,
-        last_trade_time: int,
-        current_time: int,
-        position_value: float,
-        portfolio_value: float
-    ) -> bool:
-        """
-        Validate trade against risk constraints.
+        portfolio_value: float,
+        daily_drawdown: float,
+        num_open_trades: int,
+        position_size: float,
+        last_trade_time: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Validate a trade against risk constraints.
         
         Args:
-            current_drawdown: Current daily drawdown
-            open_trades: Number of currently open trades
-            last_trade_time: Timestamp of last trade
-            current_time: Current timestamp
-            position_value: Value of the position
-            portfolio_value: Total portfolio value
+            portfolio_value: Current portfolio value
+            daily_drawdown: Current daily drawdown
+            num_open_trades: Number of currently open trades
+            position_size: Proposed position size
+            last_trade_time: Time of last trade
             
         Returns:
-            True if trade is valid, False otherwise
+            Dictionary with validation result and reason
         """
         try:
-            # Check daily drawdown
-            if current_drawdown > self.risk_constraints.max_daily_drawdown:
-                self.logger.warning(f"Daily drawdown {current_drawdown:.2%} exceeds limit")
-                return False
+            self.logger.debug(f"Validating trade: portfolio_value={portfolio_value}, daily_drawdown={daily_drawdown}, num_open_trades={num_open_trades}, position_size={position_size}, last_trade_time={last_trade_time}")
+            
+            # Check position size constraints
+            if position_size < self.position_constraints.min_value:
+                self.logger.debug(f"Position size {position_size} below minimum {self.position_constraints.min_value}")
+                return {
+                    'valid': False,
+                    'reason': f"Position size {position_size} below minimum {self.position_constraints.min_value}"
+                }
+            
+            if position_size > self.position_constraints.max_value:
+                self.logger.debug(f"Position size {position_size} above maximum {self.position_constraints.max_value}")
+                return {
+                    'valid': False,
+                    'reason': f"Position size {position_size} above maximum {self.position_constraints.max_value}"
+                }
+            
+            # Check portfolio risk
+            position_risk = position_size / portfolio_value
+            self.logger.debug(f"Position risk: {position_risk:.2%}")
+            if position_risk > self.position_constraints.max_portfolio_risk:
+                self.logger.debug(f"Position risk {position_risk:.2%} exceeds maximum {self.position_constraints.max_portfolio_risk:.2%}")
+                return {
+                    'valid': False,
+                    'reason': f"Position risk {position_risk:.2%} exceeds maximum {self.position_constraints.max_portfolio_risk:.2%}"
+                }
+            
+            # Check drawdown
+            self.logger.debug(f"Daily drawdown: {daily_drawdown:.2%}")
+            if daily_drawdown > self.risk_constraints.max_daily_drawdown:
+                self.logger.debug(f"Daily drawdown {daily_drawdown:.2%} exceeds maximum {self.risk_constraints.max_daily_drawdown:.2%}")
+                return {
+                    'valid': False,
+                    'reason': f"Daily drawdown {daily_drawdown:.2%} exceeds maximum {self.risk_constraints.max_daily_drawdown:.2%}"
+                }
             
             # Check open trades
-            if open_trades >= self.risk_constraints.max_open_trades:
-                self.logger.warning(f"Maximum open trades ({self.risk_constraints.max_open_trades}) reached")
-                return False
+            self.logger.debug(f"Number of open trades: {num_open_trades}")
+            if num_open_trades >= self.risk_constraints.max_open_trades:
+                self.logger.debug(f"Maximum number of open trades ({self.risk_constraints.max_open_trades}) reached")
+                return {
+                    'valid': False,
+                    'reason': f"Maximum number of open trades ({self.risk_constraints.max_open_trades}) reached"
+                }
             
-            # Check trade interval
-            if (current_time - last_trade_time) < self.risk_constraints.min_trade_interval:
-                self.logger.warning("Trade interval too short")
-                return False
+            # Check trade cooldown
+            if last_trade_time is not None:
+                cooldown = timedelta(minutes=self.risk_constraints.trade_cooldown_minutes)
+                time_since_last = datetime.now() - last_trade_time
+                self.logger.debug(f"Time since last trade: {time_since_last.total_seconds()/60:.1f} minutes")
+                if time_since_last < cooldown:
+                    self.logger.debug(f"Trade cooldown period not elapsed ({time_since_last.total_seconds()/60:.1f} minutes since last trade)")
+                    return {
+                        'valid': False,
+                        'reason': f"Trade cooldown period not elapsed ({time_since_last.total_seconds()/60:.1f} minutes since last trade)"
+                    }
             
-            # Check position value
-            if position_value > (portfolio_value * self.risk_constraints.max_position_value):
-                self.logger.warning("Position value exceeds limit")
-                return False
+            # All checks passed
+            self.logger.debug("All constraints satisfied")
+            return {
+                'valid': True,
+                'reason': "All constraints satisfied",
+                'metadata': {
+                    'position_risk': position_risk,
+                    'daily_drawdown': daily_drawdown,
+                    'num_open_trades': num_open_trades,
+                    'position_size': position_size,
+                    'portfolio_value': portfolio_value
+                }
+            }
             
-            return True
         except Exception as e:
             self.logger.error(f"Error validating trade: {str(e)}")
-            return False
+            return {'valid': False, 'reason': f"Error validating trade: {str(e)}"}
     
-    def get_metadata(self) -> Dict:
-        """
-        Get risk constraints metadata.
+    def get_metadata(self) -> Dict[str, Any]:
+        """Get metadata about the risk constraints.
         
         Returns:
-            Dictionary with constraints metadata
+            Dictionary containing constraints metadata
         """
         return {
             'position_constraints': {
-                'max_position_size': self.position_constraints.max_position_size,
-                'min_position_size': self.position_constraints.min_position_size,
-                'confidence_scaling': self.position_constraints.confidence_scaling,
-                'volatility_scaling': self.position_constraints.volatility_scaling,
-                'trend_scaling': self.position_constraints.trend_scaling
+                'min_value': self.position_constraints.min_value,
+                'max_value': self.position_constraints.max_value,
+                'max_portfolio_risk': self.position_constraints.max_portfolio_risk
             },
             'risk_constraints': {
                 'max_daily_drawdown': self.risk_constraints.max_daily_drawdown,
                 'max_open_trades': self.risk_constraints.max_open_trades,
-                'min_trade_interval': self.risk_constraints.min_trade_interval,
-                'max_position_value': self.risk_constraints.max_position_value,
-                'max_portfolio_risk': self.risk_constraints.max_portfolio_risk,
-                'stop_loss_pct': self.risk_constraints.stop_loss_pct,
-                'take_profit_pct': self.risk_constraints.take_profit_pct
+                'trade_cooldown_minutes': self.risk_constraints.trade_cooldown_minutes
             }
         } 

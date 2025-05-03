@@ -251,4 +251,89 @@ class DataPreprocessor:
             return df_rolling
         except Exception as e:
             self.logger.error(f"Error adding rolling features: {str(e)}")
-            raise 
+            raise
+
+def preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
+    """Preprocess OHLCV data for strategy calculations.
+    
+    Args:
+        data: DataFrame with OHLCV data
+        
+    Returns:
+        Preprocessed DataFrame with additional technical indicators
+    """
+    try:
+        # Validate input
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        if not all(col in data.columns for col in required_columns):
+            raise ValueError(f"Missing required columns: {[col for col in required_columns if col not in data.columns]}")
+        
+        # Create a copy to avoid modifying the original
+        df = data.copy()
+        
+        # Fill NaN values
+        df = df.fillna(method='ffill').fillna(method='bfill')
+        
+        # Calculate returns
+        df['returns'] = df['close'].pct_change()
+        
+        # Calculate EMAs
+        df['ema_12'] = calculate_ema(df['close'], 12)
+        df['ema_26'] = calculate_ema(df['close'], 26)
+        
+        # Calculate MACD
+        df['macd'] = df['ema_12'] - df['ema_26']
+        df['macd_signal'] = calculate_ema(df['macd'], 9)
+        df['macd_hist'] = df['macd'] - df['macd_signal']
+        
+        # Calculate RSI
+        df['rsi'] = calculate_rsi(df['close'])
+        
+        # Calculate Bollinger Bands
+        df['bb_middle'] = df['close'].rolling(window=20).mean()
+        df['bb_std'] = df['close'].rolling(window=20).std()
+        df['bb_upper'] = df['bb_middle'] + (df['bb_std'] * 2)
+        df['bb_lower'] = df['bb_middle'] - (df['bb_std'] * 2)
+        
+        # Calculate volatility
+        df['volatility'] = df['returns'].rolling(window=20).std()
+        
+        # Fill any remaining NaN values with neutral values
+        df = df.fillna(0)
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Error preprocessing data: {str(e)}")
+        raise
+
+def calculate_ema(series: pd.Series, period: int) -> pd.Series:
+    """Calculate Exponential Moving Average.
+    
+    Args:
+        series: Price series
+        period: EMA period
+        
+    Returns:
+        Series with EMA values
+    """
+    return series.ewm(span=period, adjust=False).mean()
+
+def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
+    """Calculate Relative Strength Index.
+    
+    Args:
+        series: Price series
+        period: RSI period
+        
+    Returns:
+        Series with RSI values
+    """
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi 

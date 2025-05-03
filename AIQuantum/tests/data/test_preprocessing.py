@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from data.preprocessing import preprocess_data
+from AIQuantum.data.preprocessing import preprocess_data
 
 def test_preprocess_basic():
     """Test basic preprocessing functionality."""

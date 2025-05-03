@@ -1,143 +1,151 @@
-import pandas as pd
+from typing import Dict, Any, List, Optional, Union
 import numpy as np
-from typing import Dict, Optional, Tuple
+import pandas as pd
 from ..base_strategy import BaseStrategy
 from ...utils.logger import get_logger
 
-class EMAStrategy(BaseStrategy):
-    """
-    Exponential Moving Average (EMA) strategy implementation.
-    Generates signals based on EMA crossovers and price position relative to EMAs.
-    """
+def calculate_ema(series: pd.Series, period: int) -> pd.Series:
+    """Calculate Exponential Moving Average.
     
-    def __init__(self, config: Optional[Dict] = None):
-        """
-        Initialize EMA strategy with configuration.
+    Args:
+        series: Price series
+        period: EMA period
+        
+    Returns:
+        Series with EMA values
+    """
+    return series.ewm(span=period, adjust=False).mean()
+
+class EMAStrategy(BaseStrategy):
+    """Trading strategy based on Exponential Moving Averages."""
+    
+    def __init__(self, config: Dict[str, Any]):
+        """Initialize the EMA strategy.
         
         Args:
-            config: Strategy configuration dictionary
+            config: Strategy configuration
         """
         super().__init__(config)
         self.logger = get_logger(__name__)
         
-        # Default configuration
-        self.config = {
-            'fast_period': 12,
-            'slow_period': 26,
-            'signal_period': 9,
-            'trend_period': 50,
-            'signal_threshold': 0.5
-        }
+        # EMA parameters
+        self.fast_period = config.get('fast_period', 12)
+        self.slow_period = config.get('slow_period', 26)
+        self.signal_period = config.get('signal_period', 9)
+        self.trend_period = config.get('trend_period', 50)
         
-        # Update with provided config
-        if config:
-            self.config.update(config)
-        
-        self.logger.info(f"Initialized EMA strategy with config: {self.config}")
+        # Signal thresholds
+        self.signal_threshold = config.get('signal_threshold', 0.0)
+        self.trend_threshold = config.get('trend_threshold', 0.01)
     
-    def calculate_ema(self, data: pd.Series, period: int) -> pd.Series:
-        """
-        Calculate EMA for the given data.
-        
-        Args:
-            data: Series with price data
-            period: EMA period
-            
-        Returns:
-            Series with EMA values
-        """
-        try:
-            ema = data.ewm(span=period, adjust=False).mean()
-            return ema
-        except Exception as e:
-            self.logger.error(f"Error calculating EMA: {str(e)}")
-            raise
-    
-    def validate_data(self, data: pd.DataFrame) -> bool:
-        """
-        Validate input data for EMA calculation.
-        
-        Args:
-            data: DataFrame to validate
-            
-        Returns:
-            True if data is valid
-        """
-        try:
-            # Check required columns
-            required_columns = ['open', 'high', 'low', 'close', 'volume']
-            if not all(col in data.columns for col in required_columns):
-                raise ValueError(f"Missing required columns. Need: {required_columns}")
-            
-            # Check for NaN values
-            if data[required_columns].isnull().any().any():
-                self.logger.warning("Data contains NaN values")
-            
-            # Check for sufficient data points
-            max_period = max(self.config['fast_period'], 
-                           self.config['slow_period'],
-                           self.config['signal_period'],
-                           self.config['trend_period'])
-            if len(data) < max_period:
-                raise ValueError(f"Need at least {max_period} data points for EMA calculation")
-            
-            return True
-        except Exception as e:
-            self.logger.error(f"Data validation failed: {str(e)}")
-            return False
-    
-    def calculate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Calculate trading signals based on EMAs.
+    def calculate_signals(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate trading signals based on EMA crossovers.
         
         Args:
             data: DataFrame with OHLCV data
             
         Returns:
-            DataFrame with signals
+            Dictionary containing signal information
         """
         try:
-            # Validate data
             if not self.validate_data(data):
-                raise ValueError("Invalid data for signal calculation")
+                return {'signal': 0, 'strength': 0, 'metadata': {}}
             
             # Calculate EMAs
-            fast_ema = self.calculate_ema(data['close'], self.config['fast_period'])
-            slow_ema = self.calculate_ema(data['close'], self.config['slow_period'])
-            trend_ema = self.calculate_ema(data['close'], self.config['trend_period'])
+            fast_ema = calculate_ema(data['close'], self.fast_period)
+            slow_ema = calculate_ema(data['close'], self.slow_period)
+            trend_ema = calculate_ema(data['close'], self.trend_period)
             
-            # Initialize signals
-            signals = pd.DataFrame(index=data.index)
-            signals['fast_ema'] = fast_ema
-            signals['slow_ema'] = slow_ema
-            signals['trend_ema'] = trend_ema
+            # Calculate signal line
+            signal_line = calculate_ema(fast_ema - slow_ema, self.signal_period)
             
-            # Generate signals
-            signals['signal'] = 0  # Default: hold
+            # Get latest values
+            current_fast = fast_ema.iloc[-1]
+            current_slow = slow_ema.iloc[-1]
+            current_trend = trend_ema.iloc[-1]
+            current_signal = signal_line.iloc[-1]
+            current_price = data['close'].iloc[-1]
             
-            # Bullish crossover (fast EMA crosses above slow EMA)
-            signals.loc[fast_ema > slow_ema, 'signal'] = 1  # Buy
+            # Calculate distances
+            fast_slow_dist = (current_fast - current_slow) / current_slow
+            price_trend_dist = (current_price - current_trend) / current_trend
             
-            # Bearish crossover (fast EMA crosses below slow EMA)
-            signals.loc[fast_ema < slow_ema, 'signal'] = -1  # Sell
+            # Determine signal
+            signal = 0
+            if fast_slow_dist > self.signal_threshold:
+                signal = 1 if price_trend_dist > self.trend_threshold else 0
+            elif fast_slow_dist < -self.signal_threshold:
+                signal = -1 if price_trend_dist < -self.trend_threshold else 0
             
-            # Add trend strength
-            signals['trend_strength'] = np.abs(fast_ema - slow_ema) / slow_ema
+            # Calculate signal strength based on distance and trend alignment
+            strength = min(1.0, abs(fast_slow_dist) * 5)  # Scale up for stronger signals
+            if signal != 0:
+                strength *= abs(price_trend_dist) * 2  # Boost strength if trend aligned
             
-            # Add signal strength
-            signals['strength'] = signals['trend_strength'] * signals['signal'].abs()
-            
-            # Add metadata
-            signals['strategy'] = 'ema'
-            signals['timestamp'] = signals.index
-            
-            self.logger.info(f"Generated {len(signals[signals['signal'] != 0])} signals")
-            return signals
+            return {
+                'signal': signal,
+                'strength': strength * signal,  # Signed strength
+                'metadata': {
+                    'fast_ema': current_fast,
+                    'slow_ema': current_slow,
+                    'trend_ema': current_trend,
+                    'signal_line': current_signal,
+                    'fast_slow_dist': fast_slow_dist,
+                    'price_trend_dist': price_trend_dist
+                }
+            }
             
         except Exception as e:
             self.logger.error(f"Error calculating signals: {str(e)}")
-            raise
+            return {'signal': 0, 'strength': 0, 'metadata': {'error': str(e)}}
     
+    def validate_data(self, data: pd.DataFrame) -> bool:
+        """Validate input data meets EMA requirements.
+        
+        Args:
+            data: DataFrame to validate
+            
+        Returns:
+            bool: True if data is valid, False otherwise
+        """
+        try:
+            # Call parent validation
+            if not super().validate_data(data):
+                return False
+            
+            # Check minimum data points for longest EMA
+            required_points = max(self.fast_period, self.slow_period, self.trend_period) * 2
+            if len(data) < required_points:
+                self.logger.error(f"Insufficient data points. Need at least {required_points}")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error validating data: {str(e)}")
+            return False
+    
+    def get_metadata(self) -> Dict[str, Any]:
+        """Get metadata about the EMA strategy.
+        
+        Returns:
+            Dictionary containing strategy metadata
+        """
+        metadata = super().get_metadata()
+        metadata.update({
+            'periods': {
+                'fast': self.fast_period,
+                'slow': self.slow_period,
+                'signal': self.signal_period,
+                'trend': self.trend_period
+            },
+            'thresholds': {
+                'signal': self.signal_threshold,
+                'trend': self.trend_threshold
+            }
+        })
+        return metadata
+
     def get_position_size(self, data: pd.DataFrame, signal: float) -> float:
         """
         Calculate position size based on EMA signal strength.
@@ -164,18 +172,4 @@ class EMAStrategy(BaseStrategy):
             return position_size
         except Exception as e:
             self.logger.error(f"Error calculating position size: {str(e)}")
-            return 0.0
-    
-    def get_metadata(self) -> Dict:
-        """
-        Get strategy metadata.
-        
-        Returns:
-            Dictionary with strategy metadata
-        """
-        return {
-            'name': 'EMA Strategy',
-            'version': '1.0.0',
-            'parameters': self.config,
-            'description': 'Generates signals based on EMA crossovers and trend strength'
-        } 
+            return 0.0 
