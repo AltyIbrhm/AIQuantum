@@ -125,10 +125,9 @@ class MACDStrategy(BaseStrategy):
             data: DataFrame with OHLCV data
             
         Returns:
-            DataFrame with signals
+            DataFrame with signals and indicators
         """
         try:
-            # Validate data
             if not self.validate_data(data):
                 raise ValueError("Invalid data for signal calculation")
             
@@ -145,14 +144,14 @@ class MACDStrategy(BaseStrategy):
             signals['histogram'] = histogram
             signals['trend_ema'] = trend_ema
             
-            # Generate signals
-            signals['signal'] = 0  # Default: hold
+            # Generate signals based on MACD crossovers
+            signals['signal'] = 0
+            signals.loc[macd_line > signal_line, 'signal'] = 1
+            signals.loc[macd_line < signal_line, 'signal'] = -1
             
-            # Bullish crossover (MACD crosses above Signal)
-            signals.loc[(macd_line > signal_line) & (macd_line.shift(1) <= signal_line.shift(1)), 'signal'] = 1
-            
-            # Bearish crossover (MACD crosses below Signal)
-            signals.loc[(macd_line < signal_line) & (macd_line.shift(1) >= signal_line.shift(1)), 'signal'] = -1
+            # Calculate strength based on histogram and trend alignment
+            signals['strength'] = np.abs(histogram) * (1 - np.abs(data['close'] - trend_ema) / trend_ema)
+            signals['strength'] = signals['strength'].fillna(0)  # Fill NaN with 0
             
             # Add momentum strength
             signals['momentum'] = histogram.diff()
@@ -160,9 +159,6 @@ class MACDStrategy(BaseStrategy):
             
             # Add trend strength
             signals['trend_strength'] = np.abs(macd_line - signal_line) / signal_line
-            
-            # Add signal strength
-            signals['strength'] = signals['trend_strength'] * signals['signal'].abs()
             
             # Add divergence detection
             signals['price_high'] = data['high'].rolling(window=self.config['divergence_lookback']).max()

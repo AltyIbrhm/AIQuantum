@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 from datetime import datetime
 from .constraints import RiskConstraintsManager
 from ..utils.logger import get_logger
@@ -17,8 +17,17 @@ class RiskEngine:
         """
         self.logger = get_logger(__name__)
         
-        # Initialize constraints manager
-        self.constraints = RiskConstraintsManager(config)
+        # Initialize constraints manager with default config if None
+        default_config = {
+            'min_position_value': 100,
+            'max_position_value': 10000,
+            'max_portfolio_risk': 0.1,
+            'max_daily_drawdown': 0.05,
+            'max_open_trades': 3,
+            'trade_cooldown_minutes': 30
+        }
+        self.config = config or default_config
+        self.constraints = RiskConstraintsManager(self.config)
         
         # Initialize state
         self.open_trades = 0
@@ -27,6 +36,67 @@ class RiskEngine:
         self.portfolio_value = 0.0
         
         self.logger.info("Initialized risk engine")
+    
+    def calculate_position_size(self, portfolio_value: float, risk_per_trade: float) -> float:
+        """
+        Calculate position size based on portfolio value and risk per trade.
+        
+        Args:
+            portfolio_value: Current portfolio value
+            risk_per_trade: Risk percentage per trade
+            
+        Returns:
+            Calculated position size
+            
+        Raises:
+            ValueError: If input parameters are invalid
+        """
+        if portfolio_value <= 0:
+            raise ValueError("Portfolio value must be positive")
+        if risk_per_trade <= 0:
+            raise ValueError("Risk per trade must be positive")
+        if risk_per_trade > 1:
+            raise ValueError("Risk per trade must be less than 100%")
+            
+        position_size = portfolio_value * risk_per_trade
+        return max(position_size, self.config['min_position_value'])
+
+    def validate_trade(
+        self,
+        portfolio_value: float,
+        daily_drawdown: float = None,
+        num_open_trades: int = None,
+        position_size: float = None,
+        last_trade_time: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """
+        Validate a trade against risk constraints.
+        
+        Args:
+            portfolio_value: Current portfolio value
+            daily_drawdown: Current daily drawdown
+            num_open_trades: Number of currently open trades
+            position_size: Size of the proposed trade
+            last_trade_time: Time of the last trade
+            
+        Returns:
+            Dictionary with validation result and reason
+            
+        Raises:
+            KeyError: If required fields are missing
+        """
+        # Check required fields
+        if daily_drawdown is None or num_open_trades is None or position_size is None:
+            raise KeyError("Missing required fields: daily_drawdown, num_open_trades, position_size")
+            
+        validation_result = self.constraints.validate_trade(
+            portfolio_value=portfolio_value,
+            daily_drawdown=daily_drawdown,
+            num_open_trades=num_open_trades,
+            position_size=position_size,
+            last_trade_time=last_trade_time
+        )
+        return validation_result
     
     def evaluate_trade(
         self,

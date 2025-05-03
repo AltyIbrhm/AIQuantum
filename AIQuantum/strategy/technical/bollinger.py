@@ -118,75 +118,51 @@ class BollingerStrategy(BaseStrategy):
             data: DataFrame with OHLCV data
             
         Returns:
-            DataFrame with signals
+            DataFrame with signals and indicators
         """
         try:
-            # Validate data
             if not self.validate_data(data):
                 raise ValueError("Invalid data for signal calculation")
             
-            # Calculate Bollinger Bands
-            middle_band, upper_band, lower_band = self.calculate_bands(data['close'])
+            # Calculate bands
+            middle, upper, lower = self.calculate_bands(data['close'])
             
             # Calculate band width
-            band_width = self.calculate_band_width(middle_band, upper_band, lower_band)
-            
-            # Calculate trend EMA
-            trend_ema = data['close'].ewm(span=self.config['trend_period'], adjust=False).mean()
+            band_width = self.calculate_band_width(middle, upper, lower)
             
             # Initialize signals
             signals = pd.DataFrame(index=data.index)
-            signals['middle_band'] = middle_band
-            signals['upper_band'] = upper_band
-            signals['lower_band'] = lower_band
-            signals['band_width'] = band_width
-            signals['trend_ema'] = trend_ema
+            signals['upper_band'] = upper
+            signals['middle_band'] = middle
+            signals['lower_band'] = lower
             
-            # Generate signals
-            signals['signal'] = 0  # Default: hold
+            # Calculate position relative to bands
+            position = (data['close'] - middle) / (upper - lower)
             
-            # Mean reversion signals
-            # Buy when price closes below lower band and starts moving up
-            signals.loc[
-                (data['close'] < lower_band) & 
-                (data['close'] > data['close'].shift(1)) & 
-                (band_width > self.config['min_band_width']),
-                'signal'
-            ] = 1
-            
-            # Sell when price closes above upper band and starts moving down
-            signals.loc[
-                (data['close'] > upper_band) & 
-                (data['close'] < data['close'].shift(1)) & 
-                (band_width > self.config['min_band_width']),
-                'signal'
-            ] = -1
+            # Generate signals based on position
+            signals['signal'] = 0
+            signals.loc[position > self.config['signal_threshold'], 'signal'] = -1
+            signals.loc[position < -self.config['signal_threshold'], 'signal'] = 1
             
             # Add squeeze detection
             signals['squeeze'] = band_width < self.config['squeeze_threshold']
             
             # Add reversion detection
             signals['reversion'] = (
-                (data['close'].shift(1) < lower_band.shift(1)) & 
-                (data['close'] > lower_band) & 
+                (data['close'].shift(1) < lower.shift(1)) & 
+                (data['close'] > lower) & 
                 (band_width > self.config['min_band_width'])
             ) | (
-                (data['close'].shift(1) > upper_band.shift(1)) & 
-                (data['close'] < upper_band) & 
+                (data['close'].shift(1) > upper.shift(1)) & 
+                (data['close'] < upper) & 
                 (band_width > self.config['min_band_width'])
             )
             
-            # Add signal strength
-            signals['strength'] = np.abs(data['close'] - middle_band) / middle_band
+            # Calculate strength based on position and band width
+            signals['strength'] = np.abs(position) * (1 - band_width)
+            signals['strength'] = signals['strength'].fillna(0)  # Fill NaN with 0
+            signals['strength'] = signals['strength'].clip(lower=0)  # Ensure non-negative
             
-            # Add volatility metric
-            signals['volatility'] = band_width
-            
-            # Add metadata
-            signals['strategy'] = 'bollinger'
-            signals['timestamp'] = signals.index
-            
-            self.logger.info(f"Generated {len(signals[signals['signal'] != 0])} signals")
             return signals
             
         except Exception as e:

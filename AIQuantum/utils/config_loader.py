@@ -23,7 +23,14 @@ class ConfigLoader:
             raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
         with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+            content = f.read()
+            if not content.strip():
+                raise yaml.YAMLError("Empty configuration file")
+            
+            config = yaml.safe_load(content)
+            if config is None:
+                raise yaml.YAMLError("Invalid YAML configuration")
+            
             self.config_cache[config_name] = config
             return config
 

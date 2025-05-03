@@ -61,13 +61,13 @@ class SignalCombiner:
         """
         try:
             if self.config['strategies']['ema']['enabled']:
-                self.strategies['ema'] = EMAStrategy()
+                self.strategies['ema'] = EMAStrategy(config=self.config['strategies']['ema'])
             
             if self.config['strategies']['macd']['enabled']:
-                self.strategies['macd'] = MACDStrategy()
+                self.strategies['macd'] = MACDStrategy(config=self.config['strategies']['macd'])
             
             if self.config['strategies']['bollinger']['enabled']:
-                self.strategies['bollinger'] = BollingerStrategy()
+                self.strategies['bollinger'] = BollingerStrategy(config=self.config['strategies']['bollinger'])
             
             self.logger.info(f"Initialized {len(self.strategies)} strategies")
         except Exception as e:
@@ -82,17 +82,22 @@ class SignalCombiner:
             data: DataFrame with OHLCV data
             
         Returns:
-            Dictionary with combined signals and metadata
+            Dictionary with combined signals and confidence
         """
         try:
+            if data.empty:
+                raise ValueError("Empty DataFrame provided")
+            
+            if not all(col in data.columns for col in ['open', 'high', 'low', 'close', 'volume']):
+                raise ValueError("Missing required columns in DataFrame")
+            
             # Initialize results
             results = {
                 'signals': {},
-                'combined_signal': 0,
-                'combined_confidence': 0.0,
                 'strategy_weights': {},
                 'strategy_confidences': {},
-                'debug_info': {}
+                'combined_signal': 0,
+                'combined_confidence': 0.0
             }
             
             # Calculate signals for each strategy
@@ -104,50 +109,20 @@ class SignalCombiner:
                     # Calculate signals
                     signals = strategy.calculate_signals(data)
                     
-                    # Extract relevant information
-                    last_signal = signals['signal'].iloc[-1]
-                    last_strength = signals['strength'].iloc[-1]
-                    
-                    # Calculate confidence
-                    confidence = self._calculate_confidence(signals, strategy_config)
-                    
                     # Store results
-                    results['signals'][name] = {
-                        'signal': last_signal,
-                        'strength': last_strength,
-                        'confidence': confidence,
-                        'raw_data': signals
-                    }
-                    
-                    # Store weights and confidences
+                    results['signals'][name] = signals
                     results['strategy_weights'][name] = strategy_config['weight']
-                    results['strategy_confidences'][name] = confidence
-                    
-                    # Store debug info if enabled
-                    if self.config['debug']:
-                        results['debug_info'][name] = {
-                            'last_signal': last_signal,
-                            'last_strength': last_strength,
-                            'confidence': confidence,
-                            'trend': signals['trend_ema'].iloc[-1] if 'trend_ema' in signals else None,
-                            'volatility': signals['volatility'].iloc[-1] if 'volatility' in signals else None
-                        }
+                    results['strategy_confidences'][name] = strategy_config['min_confidence']
                     
                 except Exception as e:
                     self.logger.error(f"Error calculating signals for {name}: {str(e)}")
-                    continue
+                    raise
             
-            # Calculate combined signal and confidence
+            # Combine signals
             combined_signal, combined_confidence = self._combine_signals(results)
-            
-            # Update results
             results['combined_signal'] = combined_signal
             results['combined_confidence'] = combined_confidence
             
-            # Add decision
-            results['decision'] = self._make_decision(combined_signal, combined_confidence)
-            
-            self.logger.info(f"Generated combined signal: {results['decision']} with confidence: {combined_confidence:.2f}")
             return results
             
         except Exception as e:
@@ -208,7 +183,7 @@ class SignalCombiner:
             total_weight = 0.0
             weighted_confidence = 0.0
             
-            for name, data in results['signals'].items():
+            for name, data in results.items():
                 # Get strategy config
                 strategy_config = self.config['strategies'][name]
                 
