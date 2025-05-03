@@ -1,0 +1,26 @@
+# Live trading configuration
+trading:
+  mode: "live"
+  exchange: "binance"
+  api_key: "${BINANCE_API_KEY}"
+  api_secret: "${BINANCE_API_SECRET}"
+  testnet: false
+
+risk:
+  max_position_size: 0.05
+  max_daily_loss: 0.01
+  max_drawdown: 0.05
+
+strategy:
+  enabled_strategies:
+    - "lstm"
+  confidence_threshold: 0.7
+  min_trades_per_day: 1
+  max_trades_per_day: 5
+
+monitoring:
+  health_check_interval: 300  # seconds
+  alert_thresholds:
+    drawdown: 0.03
+    daily_loss: 0.01
+    position_size: 0.05 
