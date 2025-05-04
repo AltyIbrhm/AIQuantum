@@ -2,7 +2,6 @@
 Machine learning models for AIQuantum
 """
 
-from .lstm_model import LSTMModel
-from .model_utils import ModelUtils
+from .trade import Trade, TradeSide
 
-__all__ = ['LSTMModel', 'ModelUtils'] 
+__all__ = ['Trade', 'TradeSide'] 
