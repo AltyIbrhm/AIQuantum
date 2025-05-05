@@ -1,11 +1,8 @@
 """
-Dashboard and visualization components for AIQuantum
+Dashboard module for AIQuantum.
+Contains visualization and monitoring components.
 """
 
-from .rich_dashboard import RichDashboard
 from .performance_plotter import PerformancePlotter
 
-__all__ = [
-    'RichDashboard',
-    'PerformancePlotter'
-] 
+__all__ = ['PerformancePlotter'] 
