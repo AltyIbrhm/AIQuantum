@@ -12,7 +12,8 @@ def sample_trade():
         size=1.0,
         confidence=0.8,
         stop_loss=95.0,
-        take_profit=110.0
+        take_profit=110.0,
+        symbol="BTC/USD"
     )
 
 def test_close_trade(sample_trade):
@@ -61,7 +62,8 @@ def test_short_trade_pnl():
         entry_price=100.0,
         side=TradeSide.SHORT,
         size=1.0,
-        confidence=0.8
+        confidence=0.8,
+        symbol="BTC/USD"
     )
     
     trade.close_trade(
@@ -111,7 +113,8 @@ def test_trade_duration():
         entry_price=100.0,
         side=TradeSide.LONG,
         size=1.0,
-        confidence=0.8
+        confidence=0.8,
+        symbol="BTC/USD"
     )
     
     trade.close_trade(exit_time, 105.0)

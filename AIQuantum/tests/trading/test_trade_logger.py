@@ -21,7 +21,8 @@ def sample_trade():
         size=1.0,
         confidence=0.8,
         stop_loss=95.0,
-        take_profit=110.0
+        take_profit=110.0,
+        symbol="BTC/USD"
     )
 
 def test_log_trade_to_csv_json(trade_logger, sample_trade):
@@ -60,7 +61,8 @@ def test_log_multiple_trades(trade_logger, sample_trade):
         entry_price=101.0,
         side=TradeSide.SHORT,
         size=2.0,
-        confidence=0.9
+        confidence=0.9,
+        symbol="BTC/USD"
     )
     
     # Log both trades
@@ -85,7 +87,8 @@ def test_daily_summary_logging(trade_logger, sample_trade):
         entry_price=101.0,
         side=TradeSide.LONG,
         size=1.0,
-        confidence=0.8
+        confidence=0.8,
+        symbol="BTC/USD"
     )
     
     # Close the trades with different outcomes
@@ -123,7 +126,8 @@ def test_trade_logger_handles_existing_files(trade_logger, sample_trade):
         entry_price=101.0,
         side=TradeSide.LONG,
         size=1.0,
-        confidence=0.8
+        confidence=0.8,
+        symbol="BTC/USD"
     )
     
     # Log second trade (should append to existing files)

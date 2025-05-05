@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, Dict, Any
 import json
+import uuid
 
 class TradeSide(Enum):
     LONG = "LONG"
@@ -18,6 +19,7 @@ class Trade:
     side: TradeSide
     size: float
     confidence: float
+    symbol: str
     
     # Optional fields (can be set after trade entry)
     exit_time: Optional[datetime] = None
@@ -29,9 +31,12 @@ class Trade:
     pnl: Optional[float] = None
     duration: Optional[float] = None  # in seconds
     status: str = "OPEN"  # OPEN, CLOSED, STOPPED, EXPIRED
+    id: str = None  # Trade ID
     
     def __post_init__(self):
         """Initialize calculated fields after object creation."""
+        if self.id is None:
+            self.id = str(uuid.uuid4())
         if self.exit_time and self.entry_time:
             self.duration = (self.exit_time - self.entry_time).total_seconds()
             self._calculate_pnl()
@@ -78,6 +83,8 @@ class Trade:
     def to_dict(self) -> Dict[str, Any]:
         """Convert the trade to a dictionary for serialization."""
         return {
+            "id": self.id,
+            "symbol": self.symbol,
             "entry_time": self.entry_time.isoformat(),
             "entry_price": self.entry_price,
             "side": self.side.value,

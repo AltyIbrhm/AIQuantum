@@ -18,7 +18,8 @@ def sample_trade():
         size=1.0,
         confidence=0.8,
         stop_loss=95.0,
-        take_profit=110.0
+        take_profit=110.0,
+        symbol="BTC/USD"
     )
 
 def test_add_trade_and_close(position_tracker, sample_trade):
@@ -91,7 +92,8 @@ def test_max_open_trades(position_tracker, sample_trade):
         entry_price=101.0,
         side=TradeSide.LONG,
         size=1.0,
-        confidence=0.8
+        confidence=0.8,
+        symbol="BTC/USD"
     )
     assert position_tracker.open_trade(trade2)
     
@@ -101,7 +103,8 @@ def test_max_open_trades(position_tracker, sample_trade):
         entry_price=102.0,
         side=TradeSide.LONG,
         size=1.0,
-        confidence=0.8
+        confidence=0.8,
+        symbol="BTC/USD"
     )
     assert not position_tracker.open_trade(trade3)
 
@@ -116,7 +119,8 @@ def test_cooldown_period(position_tracker, sample_trade):
         entry_price=101.0,
         side=TradeSide.LONG,
         size=1.0,
-        confidence=0.8
+        confidence=0.8,
+        symbol="BTC/USD"
     )
     assert not position_tracker.open_trade(trade2)
     
@@ -126,7 +130,8 @@ def test_cooldown_period(position_tracker, sample_trade):
         entry_price=102.0,
         side=TradeSide.LONG,
         size=1.0,
-        confidence=0.8
+        confidence=0.8,
+        symbol="BTC/USD"
     )
     assert position_tracker.open_trade(trade3)
 
@@ -146,7 +151,8 @@ def test_portfolio_summary(position_tracker, sample_trade):
         side=TradeSide.LONG,
         size=1.0,
         confidence=0.8,
-        stop_loss=95.0
+        stop_loss=95.0,
+        symbol="BTC/USD"
     )
     position_tracker.open_trade(trade2)
     position_tracker.check_sl_tp(

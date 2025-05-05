@@ -82,7 +82,7 @@ class PaperTradingEngine(BaseTradingEngine):
                     'side': trade.side.value,
                     'entry_price': trade.entry_price,
                     'exit_price': trade.exit_price,
-                    'quantity': trade.quantity,
+                    'size': trade.size,
                     'pnl': trade.pnl,
                     'entry_time': trade.entry_time,
                     'exit_time': trade.exit_time,
@@ -141,7 +141,8 @@ class PaperTradingEngine(BaseTradingEngine):
             size=position_size,
             confidence=signal.get('confidence', 0.0),
             stop_loss=signal.get('stop_loss'),
-            take_profit=signal.get('take_profit')
+            take_profit=signal.get('take_profit'),
+            symbol=signal['symbol']
         )
         
         # Open the trade

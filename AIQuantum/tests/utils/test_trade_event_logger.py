@@ -4,15 +4,15 @@ import tempfile
 import os
 from datetime import datetime
 from pathlib import Path
-from AIQuantum.utils.trade_logger import TradeLogger
+from AIQuantum.utils.trade_logger import TradeLogger as TradeEventLogger
 
-class TestTradeLogger(unittest.TestCase):
-    """Test suite for TradeLogger class."""
+class TestTradeEventLogger(unittest.TestCase):
+    """Test suite for TradeEventLogger class."""
     
     def setUp(self):
         """Set up test fixtures."""
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.logger = TradeLogger(log_dir=self.temp_dir.name)
+        self.logger = TradeEventLogger(log_dir=self.temp_dir.name)
         
         # Sample trade data
         self.trade_data = {
@@ -35,7 +35,7 @@ class TestTradeLogger(unittest.TestCase):
         self.temp_dir.cleanup()
     
     def test_initialization(self):
-        """Test proper initialization of TradeLogger."""
+        """Test proper initialization of TradeEventLogger."""
         self.assertTrue(os.path.exists(self.temp_dir.name))
         self.assertTrue(os.path.exists(os.path.join(self.temp_dir.name, "trades.json")))
         self.assertTrue(os.path.exists(os.path.join(self.temp_dir.name, "rejected_trades.json")))
